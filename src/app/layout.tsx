@@ -20,7 +20,7 @@ const signika = Signika({
 });
 
 export async function generateMetadata(): Promise<Metadata> {
-  const metadataBase = "https://tinhdiemuneti.id.vn"; // Updated to a placeholder that looks like a possible production URL or just stay with localhost if unsure, but for SEO let's use a descriptive one or leave as is if preferred. Actually, user just asked to write it.
+  const metadataBase = "https://uneti.dichvuright.com";
   return {
     metadataBase: new URL(metadataBase),
     title: "Công Cụ Tính Điểm UNETI - Tính GPA, CPA & Điểm Môn Học Chính Xác",
