@@ -78,14 +78,17 @@ export default function Home() {
             value="subject"
             className="mt-0 focus-visible:outline-none"
           >
+            <h2 className="sr-only">Tính điểm trung bình môn học</h2>
             <SubjectGradeCalc />
           </TabsContent>
 
           <TabsContent value="gpa" className="mt-0 focus-visible:outline-none">
+            <h2 className="sr-only">Tính điểm GPA học kỳ</h2>
             <GPACalc />
           </TabsContent>
 
           <TabsContent value="cpa" className="mt-0 focus-visible:outline-none">
+            <h2 className="sr-only">Tính điểm CPA tích lũy</h2>
             <CPACalc />
           </TabsContent>
         </Tabs>

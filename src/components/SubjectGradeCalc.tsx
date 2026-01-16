@@ -19,11 +19,14 @@ import {
   CheckCircle2,
   FileSpreadsheet,
   Download,
+  AlertCircle,
+  X
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import * as XLSX from 'xlsx'
 import { saveAs } from 'file-saver'
+import { GradeCalculator, GradeInfo } from '@/lib/grade-calculator'
 import { 
   Document, 
   Packer, 
@@ -36,28 +39,8 @@ import {
   WidthType 
 } from 'docx'
 
-interface GradeInfo {
-  id: string
-  min: number
-  max: number
-  letter: string
-  rank: string
-  className: string
-  range: string
-  grade4: string
-}
+const grades = GradeCalculator.grades
 
-const grades: GradeInfo[] = [
-  { id: 'gradeA', min: 8.5, max: 10, letter: 'A', rank: 'Giỏi', range: '8.5 -> 10.0', className: 'bg-green-100 text-green-800 border-green-200 dark:bg-green-900/30 dark:text-green-400', grade4: '4.0' },
-  { id: 'gradeBPlus', min: 7.8, max: 8.4, letter: 'B+', rank: 'Khá giỏi', range: '7.8 -> 8.4', className: 'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400', grade4: '3.5 -> 3.9' },
-  { id: 'gradeB', min: 7.0, max: 7.7, letter: 'B', rank: 'Khá', range: '7.0 -> 7.7', className: 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400', grade4: '3.0 -> 3.4' },
-  { id: 'gradeCPlus', min: 6.3, max: 6.9, letter: 'C+', rank: 'TB khá', range: '6.3 -> 6.9', className: 'bg-cyan-100 text-cyan-800 border-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-400', grade4: '2.5 -> 2.9' },
-  { id: 'gradeC', min: 5.5, max: 6.2, letter: 'C', rank: 'Trung bình', range: '5.5 -> 6.2', className: 'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400', grade4: '2.0 -> 2.4' },
-  { id: 'gradeDPlus', min: 4.8, max: 5.4, letter: 'D+', rank: 'TB Yếu', range: '4.8 -> 5.4', className: 'bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-900/30 dark:text-orange-400', grade4: '1.5 -> 1.9' },
-  { id: 'gradeD', min: 4.0, max: 4.7, letter: 'D', rank: 'Yếu', range: '4.0 -> 4.7', className: 'bg-red-100 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-400', grade4: '1.0 -> 1.4' },
-  { id: 'gradeFPlus', min: 3.0, max: 3.9, letter: 'F+', rank: 'Kém', range: '3.0 -> 3.9', className: 'bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-900/30 dark:text-rose-400', grade4:'0.5 -> 0.9' },
-  { id: 'gradeF', min: 0, max: 2.9, letter: 'F', rank: 'Rất kém', range: '0.0 -> 2.9', className: 'bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-400', grade4: '0.0 -> 0.4' }
-]
 
 export default function SubjectGradeCalc() {
   const [subjectName, setSubjectName] = useState('')
@@ -74,8 +57,18 @@ export default function SubjectGradeCalc() {
     tbMon4: number
     grade: GradeInfo
   } | null>(null)
+  
+  const [isExportDialogOpen, setIsExportDialogOpen] = useState(false)
+  const [exportType, setExportType] = useState<'excel' | 'word' | 'txt' | null>(null)
 
   const handleHsChange = (type: 'hs1' | 'hs2', index: number, value: string) => {
+    // Validate value between 0 and 10
+    const numValue = parseFloat(value)
+    if (value !== '' && (isNaN(numValue) || numValue < 0 || numValue > 10)) {
+      toast.error("Điểm phải nằm trong khoảng 0 - 10")
+      return
+    }
+
     if (type === 'hs1') {
       const newHs1 = [...hs1]
       newHs1[index] = value
@@ -91,12 +84,6 @@ export default function SubjectGradeCalc() {
     return arr
       .map(v => parseFloat(v))
       .filter(v => !isNaN(v) && v >= 0 && v <= 10)
-  }
-
-  const sumArray = (arr: number[]) => arr.reduce((a, b) => a + b, 0)
-
-  const getGradeInfo = (tbMon: number) => {
-    return grades.find(g => tbMon >= g.min && tbMon <= g.max) || grades[grades.length - 1]
   }
 
   const calculate = () => {
@@ -136,31 +123,21 @@ export default function SubjectGradeCalc() {
     }
     
     if (dsHS1.length === 0 && dsHS2.length === 0) {
-      toast.warning("Vui lòng nhập ít nhất một cột điểm quá trình")
+      toast.warning("Vui lòng nhập ít nhất một cột điểm hệ số 1")
       return
     }
 
-    const tuSo = (dCC * sCredits) + sumArray(dsHS1) + (sumArray(dsHS2) * 2)
-    const mauSo = sCredits + dsHS1.length + (dsHS2.length * 2)
+    const calcResult = GradeCalculator.calculateSubjectGrade(sCredits, dCC, dsHS1, dsHS2, dThi)
 
-    if (mauSo === 0) return
-
-    let tbThuongKi = tuSo / mauSo
-    tbThuongKi = Math.round(tbThuongKi * 100) / 100
-
-    let tbMon = (tbThuongKi * 0.4) + (dThi * 0.6)
-    tbMon = Math.round(tbMon * 10) / 10
-
-    let tbMon4 = tbMon / 2.5
-    tbMon4 = Math.round(tbMon4 * 100) / 100
-
-    setResult({
-      mauSo,
-      tbThuongKi,
-      tbMon,
-      tbMon4,
-      grade: getGradeInfo(tbMon)
-    })
+    if (calcResult) {
+      setResult({
+        mauSo: calcResult.mauSo,
+        tbThuongKi: calcResult.tbThuongKi,
+        tbMon: calcResult.tbMonValue,
+        tbMon4: calcResult.tbMon4Value,
+        grade: calcResult.gradeInfo
+      })
+    }
   }
 
   const exportToExcel = () => {
@@ -239,13 +216,13 @@ export default function SubjectGradeCalc() {
               }),
               new TableRow({
                 children: [
-                  new TableCell({ children: [new Paragraph("Quá trình (HS1)")] }),
+                  new TableCell({ children: [new Paragraph("Hệ số 1 (HS1)")] }),
                   new TableCell({ children: [new Paragraph(getHsValues(hs1).join(", ") || "-")] }),
                 ]
               }),
               new TableRow({
                 children: [
-                  new TableCell({ children: [new Paragraph("Giữa kỳ (HS2)")] }),
+                  new TableCell({ children: [new Paragraph("Hệ số 2 (HS2)")] }),
                   new TableCell({ children: [new Paragraph(getHsValues(hs2).join(", ") || "-")] }),
                 ]
               }),
@@ -296,8 +273,8 @@ Số tín chỉ: ${credits}
 
 CHI TIẾT ĐIỂM:
 - Chuyên cần: ${attendance}
-- Quá trình (HS1): ${getHsValues(hs1).join(", ") || "-"}
-- Giữa kỳ (HS2): ${getHsValues(hs2).join(", ") || "-"}
+- Hệ số 1 (HS1): ${getHsValues(hs1).join(", ") || "-"}
+- Hệ số 2 (HS2): ${getHsValues(hs2).join(", ") || "-"}
 - Thi cuối kỳ: ${examScore}
 
 KẾT QUẢ:
@@ -336,7 +313,7 @@ Xuất từ TinhDiem Uneti
                     id="subjectName" 
                     placeholder="VD: Toán Giải Tích 1" 
                     className={cn(
-                      "pl-10 h-12 text-base focus-visible:ring-primary/20 transition-all border-slate-200",
+                      "pl-9 h-10 text-sm focus-visible:ring-primary/20 transition-all border-slate-200",
                       errors.subjectName && "border-destructive focus-visible:ring-destructive/20"
                     )}
                     value={subjectName}
@@ -358,7 +335,7 @@ Xuất từ TinhDiem Uneti
                     type="number" 
                     placeholder="1-10" 
                     className={cn(
-                      "pl-10 h-12 text-base focus-visible:ring-primary/20 transition-all border-slate-200",
+                      "pl-9 h-10 text-sm focus-visible:ring-primary/20 transition-all border-slate-200",
                       errors.credits && "border-destructive focus-visible:ring-destructive/20"
                     )}
                     value={credits}
@@ -383,7 +360,7 @@ Xuất từ TinhDiem Uneti
                   step="0.1" 
                   placeholder="Nhập điểm từ 0-10" 
                   className={cn(
-                    "pl-10 h-12 text-base focus-visible:ring-primary/20 transition-all border-slate-200",
+                    "pl-9 h-10 text-sm focus-visible:ring-primary/20 transition-all border-slate-200",
                     errors.attendance && "border-destructive focus-visible:ring-destructive/20"
                   )}
                   value={attendance}
@@ -400,17 +377,17 @@ Xuất từ TinhDiem Uneti
               <div className="space-y-2 p-3 rounded-xl bg-slate-50/50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 font-bold text-xs text-slate-700 dark:text-slate-300">
-                    <LineChart className="w-3.5 h-3.5 text-primary" /> Quá trình (HS1)
+                    <LineChart className="w-3.5 h-3.5 text-primary" /> Hệ số 1 (HS1)
                   </div>
                 </div>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 xs:grid-cols-3 gap-2">
                   {hs1.map((val, i) => (
                     <Input 
                       key={`hs1-${i}`}
                       type="number" 
                       step="0.1" 
                       placeholder={`.${i+1}`}
-                      className="text-center h-10 bg-white dark:bg-slate-950 border-slate-200 focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all px-1 text-base font-medium"
+                      className="text-center h-9 bg-white dark:bg-slate-950 border-slate-200 focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all px-1 text-sm font-medium"
                       value={val}
                       onChange={(e) => handleHsChange('hs1', i, e.target.value)}
                     />
@@ -421,17 +398,17 @@ Xuất từ TinhDiem Uneti
               <div className="space-y-3 p-4 rounded-xl bg-slate-50/50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 font-bold text-sm text-slate-700 dark:text-slate-300">
-                    <LineChart className="w-3.5 h-3.5 text-emerald-500" /> Giữa kỳ (HS2)
+                    <LineChart className="w-3.5 h-3.5 text-emerald-500" /> Hệ số 2 (HS2)
                   </div>
                 </div>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 xs:grid-cols-3 gap-2">
                   {hs2.map((val, i) => (
                     <Input 
                       key={`hs2-${i}`}
                       type="number" 
                       step="0.1" 
                       placeholder={`.${i+1}`}
-                      className="text-center h-10 bg-white dark:bg-slate-950 border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 transition-all px-1 text-base font-medium"
+                      className="text-center h-9 bg-white dark:bg-slate-950 border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 transition-all px-1 text-sm font-medium"
                       value={val}
                       onChange={(e) => handleHsChange('hs2', i, e.target.value)}
                     />
@@ -451,7 +428,7 @@ Xuất từ TinhDiem Uneti
                   step="0.1" 
                   placeholder="Nhập điểm thi từ 0-10" 
                   className={cn(
-                    "pl-10 h-12 text-base focus-visible:ring-orange-500/20 focus-visible:border-orange-500 transition-all border-slate-200",
+                    "pl-9 h-10 text-sm focus-visible:ring-orange-500/20 focus-visible:border-orange-500 transition-all border-slate-200",
                     errors.examScore && "border-destructive focus-visible:ring-destructive/20 border-b-destructive"
                   )}
                   value={examScore}
@@ -478,35 +455,36 @@ Xuất từ TinhDiem Uneti
           <CardHeader className="bg-slate-50/50 dark:bg-slate-900/50 border-b py-3">
             <CardTitle className="text-base flex items-center gap-2">
               <Calculator className="w-4 h-4 text-primary" />
-              Công thức chi tiết
+              Công thức chi tiết & Giải thích
             </CardTitle>
           </CardHeader>
-          <CardContent className="p-4">
-            <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-950/50 backdrop-blur-sm">
-              <table className="w-full text-xs border-collapse min-w-[600px]">
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-[11px] sm:text-xs border-collapse min-w-[700px]">
                 <thead>
-                  <tr className="bg-slate-100/50 dark:bg-slate-900/50">
-                    <th className="border-b border-r border-slate-200 dark:border-slate-800 p-2 font-bold text-slate-600 dark:text-slate-400">Tên môn</th>
-                    <th className="border-b border-r border-slate-200 dark:border-slate-800 p-2 font-bold text-slate-600 dark:text-slate-400 whitespace-nowrap">Số tín chỉ</th>
-                    <th className="border-b border-r border-slate-200 dark:border-slate-800 p-2 font-bold text-slate-600 dark:text-slate-400">Chuyên cần</th>
-                    <th className="border-b border-r border-slate-200 dark:border-slate-800 p-2 font-bold text-slate-600 dark:text-slate-400">Hệ số 1</th>
-                    <th className="border-b border-r border-slate-200 dark:border-slate-800 p-2 font-bold text-slate-600 dark:text-slate-400">Hệ số 2</th>
-                    <th className="border-b border-r border-slate-200 dark:border-slate-800 p-2 font-bold text-slate-600 dark:text-slate-400">Điểm trung bình thường kì</th>
-                    <th className="border-b border-r border-slate-200 dark:border-slate-800 p-2 font-bold text-slate-600 dark:text-slate-400">Điểm thi</th>
+                  <tr className="bg-slate-100/50 dark:bg-slate-900/50 text-slate-600 dark:text-slate-400">
+                    <th className="border-b border-r p-2 font-bold">Thành phần</th>
+                    <th className="border-b border-r p-2 font-bold whitespace-nowrap">Tín chỉ</th>
+                    <th className="border-b border-r p-2 font-bold">Chuyên cần</th>
+                    <th className="border-b border-r p-2 font-bold">Hệ số 1</th>
+                    <th className="border-b border-r p-2 font-bold">Hệ số 2</th>
+                    <th className="border-b border-r p-2 font-bold">TB Quá trình</th>
+                    <th className="border-b border-r p-2 font-bold">Thi HK</th>
+                    <th className="border-b p-2 font-bold">Kết quả</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr>
-                    <td className="border-b border-r border-slate-200 dark:border-slate-800 p-2 text-center align-middle font-medium">
-                      {subjectName || <span className="text-slate-300">Triết học</span>}
+                  <tr className="divide-x border-b">
+                    <td className="p-2 text-center align-middle font-medium max-w-[120px] truncate">
+                      {subjectName || <span className="text-slate-300">Tên môn</span>}
                     </td>
-                    <td className="border-b border-r border-slate-200 dark:border-slate-800 p-2 text-center align-middle font-medium">
+                    <td className="p-2 text-center align-middle font-medium">
                       {credits || <span className="text-slate-300">3</span>}
                     </td>
-                    <td className="border-b border-r border-slate-200 dark:border-slate-800 p-2 text-center align-middle font-medium">
+                    <td className="p-2 text-center align-middle font-medium">
                       {attendance || <span className="text-slate-300">10</span>}
                     </td>
-                    <td className="border-b border-r border-slate-200 dark:border-slate-800 p-2 text-center align-middle font-medium">
+                    <td className="p-2 text-center align-middle">
                       <div className="flex flex-wrap justify-center gap-1">
                         {getHsValues(hs1).length > 0 ? (
                           getHsValues(hs1).map((v, i) => (
@@ -517,55 +495,43 @@ Xuất từ TinhDiem Uneti
                         )}
                       </div>
                     </td>
-                    <td className="border-b border-r border-slate-200 dark:border-slate-800 p-2 text-center align-middle font-medium">
+                    <td className="p-2 text-center align-middle">
                       <div className="flex flex-wrap justify-center gap-1">
                         {getHsValues(hs2).length > 0 ? (
                           getHsValues(hs2).map((v, i) => (
                             <span key={i} className="px-1 border rounded bg-emerald-50 dark:bg-emerald-950/30">{v}</span>
                           ))
                         ) : (
-                          <div className="flex flex-col gap-1">
-                             <span className="px-1 border rounded text-slate-300 border-dashed">8</span>
-                             <span className="px-1 border rounded text-slate-300 border-dashed">9</span>
-                          </div>
+                          <span className="px-1 border rounded text-slate-300 border-dashed">9</span>
                         )}
                       </div>
                     </td>
-                    <td className="border-b border-r border-slate-200 dark:border-slate-800 p-2 text-center align-middle">
+                    <td className="p-2 text-center align-middle bg-slate-50/30 dark:bg-slate-900/20">
                       <div className="flex flex-col items-center gap-1">
-                        <span className="whitespace-nowrap text-xs">
-                          ({attendance || "10"} * {credits || "3"}) + {getHsValues(hs1).length > 0 ? getHsValues(hs1).reduce((a, b) => a + b, 0) : "8"} + ({getHsValues(hs2).length > 0 ? getHsValues(hs2).reduce((a, b) => a + b, 0) : "17"}) * 2
+                        <span className="whitespace-nowrap scale-[0.85]">
+                          ({attendance || "10"}×{credits || "3"} + ΣHS1 + ΣHS2×2) / ΣHệ-số
                         </span>
-                        <div className="w-full h-px bg-slate-300 dark:bg-slate-700" />
-                        <span>{result?.mauSo || "8"}</span>
-                        <span className="font-bold text-primary pt-1 text-sm">= {result?.tbThuongKi || "9.00"}</span>
+                        <span className="font-bold text-primary">= {result?.tbThuongKi || "9.00"}</span>
                       </div>
                     </td>
-                    <td className="border-b border-r border-slate-200 dark:border-slate-800 p-2 text-center align-middle font-medium">
-                      {examScore || <span className="text-slate-300">9</span>}
-                    </td>
-                  </tr>
-                  <tr className="bg-slate-50/30 dark:bg-slate-900/30">
-                    <td colSpan={2} className="p-2"></td>
-                    <td colSpan={3} className="p-2 text-center font-bold text-slate-500 italic">
-                      Trung bình = {result?.tbThuongKi || "9.00"}
-                    </td>
-                    <td className="p-2 text-center font-bold text-slate-500 italic border-r border-slate-200 dark:border-slate-800">Hệ số 0.4</td>
-                    <td className="p-2 text-center font-bold text-slate-500 italic border-r border-slate-200 dark:border-slate-800">
-                      Hệ số 0.6
-                      <div className="text-base text-emerald-600 dark:text-emerald-400 pt-1 not-italic">
-                        TB: {result?.tbMon || "9.0"}
-                      </div>
-                    </td>
-                    <td className="p-2 text-center">
+                    <td className="p-2 text-center align-middle bg-orange-50/20 dark:bg-orange-950/10">
                       <div className="flex flex-col items-center gap-1">
+                        <span className="text-slate-400">Thi × 0.6</span>
+                        <span className="font-bold text-orange-500">{examScore || <span className="text-slate-300">9</span>}</span>
+                      </div>
+                    </td>
+                    <td className="p-2 text-center align-middle">
+                       <div className="flex flex-col items-center gap-1.5 min-w-[100px]">
+                        <span className="text-[14px] font-black text-slate-800 dark:text-slate-200">
+                           {result?.tbMon || "9.0"}
+                        </span>
                         <span className={cn(
-                          "px-3 py-1 rounded-full text-[10px] xs:text-xs font-black tracking-wider uppercase shadow-sm whitespace-nowrap",
-                          (result?.tbMon ?? 0) >= 4 
-                            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800" 
-                            : "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400 border border-rose-200 dark:border-rose-800"
+                          "px-2 py-0.5 rounded-full text-[9px] font-black tracking-wider uppercase border",
+                          (result?.tbMon ?? 10) >= 4 
+                            ? "bg-emerald-100 text-emerald-700 border-emerald-200" 
+                            : "bg-rose-100 text-rose-700 border-rose-200"
                         )}>
-                          {(result?.tbMon ?? 0) >= 4 ? "ĐẠT CHUẨN (≥ 4.0)" : "KHÔNG ĐẠT (< 4.0)"}
+                          {(result?.tbMon ?? 10) >= 4 ? "ĐẠT" : "HỎNG"}
                         </span>
                       </div>
                     </td>
@@ -573,9 +539,62 @@ Xuất từ TinhDiem Uneti
                 </tbody>
               </table>
             </div>
+            <div className="p-3 bg-slate-50/50 dark:bg-slate-900/50 border-t text-[11px] text-slate-500 italic">
+              * TB Môn = (TB Quá trình × 0.4) + (Thi HK × 0.6). Chuẩn đạt: TB Môn ≥ 4.0 (Hệ 10)
+            </div>
           </CardContent>
         </Card>
       </div>
+      {/* Export Confirmation Modal */}
+      {isExportDialogOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <Card className="w-full max-w-md shadow-2xl border-primary/20 animate-in zoom-in-95 duration-200">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-xl font-bold flex items-center gap-2">
+                <Download className="w-5 h-5 text-primary" />
+                Xác nhận xuất file
+              </CardTitle>
+              <button 
+                onClick={() => setIsExportDialogOpen(false)}
+                className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5 text-slate-500" />
+              </button>
+            </CardHeader>
+            <CardContent className="space-y-4 pt-2">
+              <div className="flex items-start gap-3 p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800">
+                <AlertCircle className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
+                <p className="text-sm text-blue-700 dark:text-blue-300">
+                  Bạn đang chuẩn bị xuất kết quả cho môn <strong>{subjectName || "không tên"}</strong> định dạng <strong>{exportType?.toUpperCase()}</strong>.
+                </p>
+              </div>
+              <p className="text-sm text-slate-500">
+                Vui lòng xác nhận để bắt đầu quá trình tải xuống.
+              </p>
+            </CardContent>
+            <div className="p-4 border-t bg-slate-50/50 dark:bg-slate-900/50 flex justify-end gap-3">
+              <button
+                onClick={() => setIsExportDialogOpen(false)}
+                className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 transition-colors"
+              >
+                Hủy
+              </button>
+              <RainbowButton
+                onClick={() => {
+                  if (exportType === 'excel') exportToExcel()
+                  if (exportType === 'word') exportToWord()
+                  if (exportType === 'txt') exportToTxt()
+                  setIsExportDialogOpen(false)
+                }}
+                className="h-10 px-6 text-sm"
+              >
+                Xác nhận Tải về
+              </RainbowButton>
+            </div>
+          </Card>
+        </div>
+      )}
+
       <div className="lg:col-span-5 xl:col-span-4 h-fit">
         <Card className="shadow-xl border-primary/10 overflow-hidden flex flex-col gap-0 h-fit">
           <CardHeader className="border-b bg-slate-50/50 dark:bg-slate-900/50 py-3 px-4 flex flex-row items-center justify-between">
@@ -600,11 +619,17 @@ Xuất từ TinhDiem Uneti
                 </div>
                 <div className="flex justify-between items-center py-1.5 border-b border-dashed border-slate-200 dark:border-slate-800">
                   <span className="text-sm font-medium text-slate-500">Điểm thi:</span>
-                  <span className="text-sm font-bold text-slate-700 dark:text-slate-300">{result?.tbMon.toFixed(1) || "-"}</span>
+                  <span className="text-sm font-bold text-slate-700 dark:text-slate-300">{examScore || "-"}</span>
                 </div>
-                <div className="flex justify-between items-center py-1.5">
-                  <span className="text-sm font-medium text-slate-500">Điểm hệ 4:</span>
-                  <span className="text-sm font-bold text-primary">{result?.tbMon4.toFixed(2) || "-"}</span>
+                <div className="flex justify-between items-center py-2 bg-primary/5 px-2 rounded-lg mt-1">
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-black text-primary/60 uppercase tracking-tighter">HỆ 4 (CPA/GPA)</span>
+                    <span className="text-lg font-black text-primary leading-tight">{result?.tbMon4.toFixed(2) || "-"}</span>
+                  </div>
+                  <div className="flex flex-col items-end">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">HỆ 10 (TB MÔN)</span>
+                    <span className="text-lg font-black text-slate-700 dark:text-slate-300 leading-tight">{result?.tbMon.toFixed(1) || "-"}</span>
+                  </div>
                 </div>
               </div>
 
@@ -622,21 +647,30 @@ Xuất từ TinhDiem Uneti
               {result && (
                 <div className="grid grid-cols-3 gap-2">
                   <button 
-                    onClick={exportToExcel}
+                    onClick={() => {
+                      setExportType('excel')
+                      setIsExportDialogOpen(true)
+                    }}
                     className="flex flex-col items-center justify-center p-2 rounded-xl border border-emerald-100 bg-emerald-50/50 text-emerald-700 hover:bg-emerald-100 transition-all group scale-95 hover:scale-100 active:scale-90"
                   >
                     <FileSpreadsheet className="w-5 h-5 mb-1 group-hover:bounce" />
                     <span className="text-xs font-bold">EXCEL</span>
                   </button>
                   <button 
-                    onClick={exportToWord}
+                    onClick={() => {
+                      setExportType('word')
+                      setIsExportDialogOpen(true)
+                    }}
                     className="flex flex-col items-center justify-center p-2 rounded-xl border border-blue-100 bg-blue-50/50 text-blue-700 hover:bg-blue-100 transition-all group scale-95 hover:scale-100 active:scale-90"
                   >
                     <FileText className="w-5 h-5 mb-1 group-hover:bounce" />
                     <span className="text-xs font-bold">WORD</span>
                   </button>
                   <button 
-                    onClick={exportToTxt}
+                    onClick={() => {
+                      setExportType('txt')
+                      setIsExportDialogOpen(true)
+                    }}
                     className="flex flex-col items-center justify-center p-2 rounded-xl border border-slate-200 bg-slate-100/50 text-slate-700 hover:bg-slate-200 transition-all group scale-95 hover:scale-100 active:scale-90"
                   >
                     <Download className="w-5 h-5 mb-1 group-hover:bounce" />
